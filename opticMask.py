@@ -76,8 +76,38 @@ def warp2(im1, flow12):
 
     return warped_im2
 
-
 def warp(x, flo):
+    """
+    warp an image/tensor (im2) back to im1, according to the optical flow
+    x: [B, C, H, W] (im2)
+    flo: [B, 2, H, W] flow
+    """
+    B, C, H, W = x.size()
+    # mesh grid
+    xx = torch.arange(0, W).view(1, -1).repeat(H, 1)
+    yy = torch.arange(0, H).view(-1, 1).repeat(1, W)
+    xx = xx.view(1, 1, H, W).repeat(B, 1, 1, 1)
+    yy = yy.view(1, 1, H, W).repeat(B, 1, 1, 1)
+    grid = torch.cat((xx, yy), 1).float()
+    
+    if x.is_cuda:
+        grid = grid.cuda()
+    vgrid = grid + flo
+    # scale grid to [-1,1]
+    vgrid[:, 0, :, :] = 2.0 * vgrid[:, 0, :, :].clone() / max(W - 1, 1) - 1.0
+    vgrid[:, 1, :, :] = 2.0 * vgrid[:, 1, :, :].clone() / max(H - 1, 1) - 1.0
+
+    vgrid = vgrid.permute(0, 2, 3, 1)
+    output = F.grid_sample(x, vgrid)
+    mask = torch.ones(x.size()).to(DEVICE)
+    mask = F.grid_sample(mask, vgrid)
+
+    mask[mask < 0.999] = 0
+    mask[mask > 0] = 1
+
+    return output
+
+def warpseg(x, flo):
     """
     warp an image/tensor (im2) back to im1, according to the optical flow
     x: [B, C, H, W] (im2)
@@ -158,8 +188,9 @@ def opticflow(args, path):
             maskpath1 = imfile1.replace('JPEGImages', 'SegmentationClassPNG') # this is the path of the mask of 1st image
             maskpath1 = maskpath1.replace('jpg', 'png') # this is the path of the mask of 1st image
            
-            segmentation_mask =  cv2.imread(maskpath1, 0) # reading as a gray scale
-
+            segmentation_mask =  cv2.imread(maskpath1) # reading as a gray scale
+            #segmentation_mask = load_image(maskpath1)
+            print(segmentation_mask.shape)
             
 
             # flow_low, flow_up = model(image1, image2, iters=20, test_mode=True)
@@ -181,7 +212,7 @@ def opticflow(args, path):
             out = (out*1).astype(np.uint8)
             
             smallpath = str(count) + 'hehe.png'
-            count += 1
+      
 
             # this if for images only we need files
             savepath = 'testoutputs'
@@ -191,13 +222,12 @@ def opticflow(args, path):
             else:
                 print("Error in saving file")
 
-            out = warp(image1, flow12)
+            out = warpseg(segmentation_mask, flow12)
             out = out.squeeze(0).permute(1, 2, 0).cpu().numpy()
             out = (out*1).astype(np.uint8)
             
             smallpath = str(count) + 'hehe.png'
             
-
             # this if for images only we need files
             savepath = 'testwarp'
             result=cv2.imwrite(os.path.join(savepath, smallpath), out)
