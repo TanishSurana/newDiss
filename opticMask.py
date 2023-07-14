@@ -110,56 +110,46 @@ def warp(x, flo):
 def warpseg(x, flo):
     """
     warp an image/tensor (im2) back to im1, according to the optical flow
-    x: [B, C, H, W] (im2)
+    x: [H, W, C] (im2)
     flo: [B, 2, H, W] flow
     """
-    B, C, H, W = x.size()
+    print('here', x.shape, flo.shape)
+    H, W, C = x.size()
+    # we need to change the shape of x so that flow and x have the same shape
+
     # mesh grid
     xx = torch.arange(0, W).view(1, -1).repeat(H, 1)
     yy = torch.arange(0, H).view(-1, 1).repeat(1, W)
-    xx = xx.view(1, 1, H, W).repeat(B, 1, 1, 1)
-    yy = yy.view(1, 1, H, W).repeat(B, 1, 1, 1)
-    grid = torch.cat((xx, yy), 1).float()
-    
+    xx = xx.view(1, H, W).repeat(B, 1, 1)
+    yy = yy.view(1, H, W).repeat(B, 1, 1)
+    grid = torch.cat((xx, yy), 0).float()
+
     if x.is_cuda:
         grid = grid.cuda()
     vgrid = grid + flo
     # scale grid to [-1,1]
-    vgrid[:, 0, :, :] = 2.0 * vgrid[:, 0, :, :].clone() / max(W - 1, 1) - 1.0
-    vgrid[:, 1, :, :] = 2.0 * vgrid[:, 1, :, :].clone() / max(H - 1, 1) - 1.0
+    vgrid[0, :, :] = 2.0 * vgrid[0, :, :].clone() / max(W - 1, 1) - 1.0
+    vgrid[1, :, :] = 2.0 * vgrid[1, :, :].clone() / max(H - 1, 1) - 1.0
 
-    vgrid = vgrid.permute(0, 2, 3, 1)
-    output = F.grid_sample(x, vgrid)
-    mask = torch.ones(x.size()).to(DEVICE)
-    mask = F.grid_sample(mask, vgrid)
+    vgrid = vgrid.permute(1, 2, 0)
+    output = F.grid_sample(x, vgrid.unsqueeze(0))
+    mask = torch.ones(x.size())
+    mask = F.grid_sample(mask, vgrid.unsqueeze(0))
 
     mask[mask < 0.999] = 0
     mask[mask > 0] = 1
 
     return output
-
 def load_image(imfile):
     img = np.array(Image.open(imfile)).astype(np.uint8)
     img = torch.from_numpy(img).permute(2, 0, 1).float()
     return img[None].to(DEVICE)
 
 def load_image_proper(imfile):
-    img = np.array(Image.open(imfile)).astype(np.uint8)
-    return img
+    img = np.array(cv2.imread(imfile)).astype(np.uint8)
+    img = torch.from_numpy(img).permute(2, 0, 1).float()
+    return img[None].to(DEVICE)
 
-def pred_next_mask(flow, image, mask):
-    # first getting all the files
-    # Estimate optical flow using RAFT model
-
-    # getting the segmentation mask of the correspondoing file using imfile
-    maskpath1 = imfile1.replace('JPEGImages', 'SegmentationClassPNG') # this is the path of the mask of 1st image
-    segmentation_mask =  cv2.imread(maskpath1, 0) # reading as a gray scale
-
-    h = flow.shape[0]
-    w = flow.shape[1]
-    flow[:,:,0] += np.arange(w)
-    flow[:,:,1] += np.arange(h)[:,np.newaxis]
-    warped_img2 = cv2.remap(img2, flow, None, cv2.INTER_LINEAR)
 
 
 def opticflow(args, path):
@@ -188,9 +178,9 @@ def opticflow(args, path):
             maskpath1 = imfile1.replace('JPEGImages', 'SegmentationClassPNG') # this is the path of the mask of 1st image
             maskpath1 = maskpath1.replace('jpg', 'png') # this is the path of the mask of 1st image
            
-            segmentation_mask =  cv2.imread(maskpath1) # reading as a gray scale
-            #segmentation_mask = load_image(maskpath1)
-            print(segmentation_mask.shape)
+            #segmentation_mask =  cv2.imread(maskpath1) # reading as a gray scale
+            segmentation_mask = load_image_proper(maskpath1)
+            print('shape of segmentation mask',segmentation_mask.shape)
             
 
             # flow_low, flow_up = model(image1, image2, iters=20, test_mode=True)
@@ -222,7 +212,7 @@ def opticflow(args, path):
             else:
                 print("Error in saving file")
 
-            out = warpseg(segmentation_mask, flow12)
+            out = warp2(segmentation_mask, flow12)
             out = out.squeeze(0).permute(1, 2, 0).cpu().numpy()
             out = (out*1).astype(np.uint8)
             
@@ -273,9 +263,12 @@ if __name__ == '__main__':
     # Print the list of subdirectory paths
     for subdirectory_path in subdirectory_paths:
         subsub = [name for name in os.listdir(subdirectory_path) if os.path.isdir(os.path.join(subdirectory_path, name))]
-        
-        images = os.path.join(subdirectory_path, subsub[1])
-        masks = os.path.join(subdirectory_path, subsub[0])
+        if 'Segmentation' in subsub[0]:
+            images = os.path.join(subdirectory_path, subsub[1])
+            masks = os.path.join(subdirectory_path, subsub[0])
+        else:
+            images = os.path.join(subdirectory_path, subsub[0])
+            masks = os.path.join(subdirectory_path, subsub[1])
 
         opticflow(args, images)
 
