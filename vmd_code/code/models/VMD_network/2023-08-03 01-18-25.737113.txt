@@ -1,0 +1,3 @@
+{'max_epoch': 15, 'last_iter': 0, 'finetune_lr': 0.0001, 'scratch_lr': 0.001, 'weight_decay': 0.0005, 'momentum': 0.9, 'snapshot': '', 'scale': 416, 'multi-scale': None, 'fp16': False, 'warm_up_epochs': 3, 'seed': 2020}
+
+epochs:1, iter: 2, hinge1_f: 2.0079265, hinge2_f: 1.3296345, hinge3_f: 1.4152555, hinge1: 1.8161795, hinge2: 1.9815555, hinge3: 2.1264895, cla: 0.0000005, lr: 0.0000008

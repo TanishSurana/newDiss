@@ -1,0 +1,2 @@
+{'max_epoch': 15, 'last_iter': 0, 'finetune_lr': 0.0001, 'scratch_lr': 0.001, 'weight_decay': 0.0005, 'momentum': 0.9, 'snapshot': '', 'scale': 416, 'multi-scale': None, 'fp16': True, 'warm_up_epochs': 3, 'seed': 2020}
+
