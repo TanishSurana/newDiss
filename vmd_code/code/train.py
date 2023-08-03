@@ -42,12 +42,16 @@ parser.add_argument('--model', type=str, default='VMD_network', help='model name
 parser.add_argument('--gpu', type=str, default='0', help='used gpu id')
 parser.add_argument('--batchsize', type=int, default=2, help='train batch')
 parser.add_argument('--bestonly', action="store_true", help='only best model')
+parser.add_argument('--small', default="False", help='for testing path to small dataset')
 
 cmd_args = parser.parse_args()
 exp_name = cmd_args.exp
 model_name = cmd_args.model
 gpu_ids = cmd_args.gpu
 train_batch_size = cmd_args.batchsize
+if cmd_args.small:
+    ViSha_training_root = ('VMD\\train_older', 'video', 'VMD_train')
+    ViSha_validation_root = ('VMD\\train_older', 'video', 'VMD_train')
 
 VMD_file = importlib.import_module('networks.' + model_name)
 VMD_Network = VMD_file.VMD_Network
