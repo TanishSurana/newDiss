@@ -87,13 +87,13 @@ torch.cuda.manual_seed(args['seed'])
 
 # multi-GPUs training
 if len(gpu_ids.split(',')) > 1:
-    print(gpu_ids)
     #print('gpu', torch.cuda.current_device())
     batch_size = train_batch_size * len(gpu_ids.split(','))
 # single-GPU training
 else:
     #DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    torch.cuda.set_device(0)
+    #torch.cuda.set_device(0)
+    torch.cuda.current_device()
     batch_size = train_batch_size
 torch.cuda.empty_cache()
 joint_transform = joint_transforms.Compose([
