@@ -56,7 +56,7 @@ class Metrics:
         trueHard = target>0.5
 
         bins = linspace(0, 255, 256)
-        fg_hist, _ = histogram(pred[trueHard], bins=bins)  # 最后一个bin为[255, 256]
+        fg_hist, _ = histogram(pred[trueHard], bins=bins) 
         bg_hist, _ = histogram(pred[~trueHard], bins=bins)
 
         fg_w_thrs = cumsum(flip(fg_hist), axis=0)
@@ -65,12 +65,8 @@ class Metrics:
         TPs = fg_w_thrs
         Ps = fg_w_thrs + bg_w_thrs
 
-        # 为防止除0，这里针对除0的情况分析后直接对于0分母设为1，因为此时分子必为0
-        # Ps[Ps == 0] = 1
         T = max(count_nonzero(target), 1)
 
-        # TODO: T=0 或者 特定阈值下fg_w_thrs=0或者bg_w_thrs=0，这些都会包含在TPs[i]=0的情况中，
-        #  但是这里使用TPs不便于处理列表
         precisions = (TPs + eps) / (Ps + eps)
         recalls = (TPs + eps) / (T + eps)
 

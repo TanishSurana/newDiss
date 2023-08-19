@@ -277,8 +277,12 @@ def opticflow(args, path, videoresultpath):
                 out = out.squeeze(0).permute(1, 2, 0).cpu().numpy()
                 out = (out*1).astype(np.uint8)
 
-                outputs.append(out)
+                #outputs.append(out)
                 outid.append(smallpath)
+
+
+
+                
 
         
                 pbar.update(int(100/len(images)))
@@ -288,10 +292,12 @@ def opticflow(args, path, videoresultpath):
 
                 
                 # CODE FOR DISPLAYING IMAGE OF OPTICAL FLOW
-                # flo = flow12[0].permute(1,2,0).cpu().numpy()
+                flo = flow12[0].permute(1,2,0).cpu().numpy()
                 
-                # # map flow to rgb image
-                # flo = flow_viz.flow_to_image(flo)
+                # map flow to rgb image
+                flo = flow_viz.flow_to_image(flo)
+
+                outputs.append(flo)
         
 
                 # cv2.imshow('image', flo)
@@ -373,7 +379,7 @@ if __name__ == '__main__':
         videofolder = images.split('\\')[1]
         #parent = 'testoutputs/'
         #parent = 'skipframeoutput/'
-        parent = 'largeoutput/'
+        parent = 'final_testing/'
         testpath = os.path.join(parent, videofolder)
         #print(testpath)
 

@@ -1,0 +1,5 @@
+{'max_epoch': 15, 'last_iter': 0, 'finetune_lr': 0.0001, 'scratch_lr': 0.001, 'weight_decay': 0.0005, 'momentum': 0.9, 'snapshot': '', 'scale': 416, 'multi-scale': None, 'fp16': False, 'warm_up_epochs': 3, 'seed': 2020}
+
+epochs:1, iter: 2, hinge1_f: 1.8828345, hinge2_f: 1.7215545, hinge3_f: 1.4772025, hinge1: 2.0705135, hinge2: 2.1146785, hinge3: 2.0112345, cla: 0.0000005, lr: 0.0000008
+epochs:1, iter: 3, hinge1_f: 1.8765135, hinge2_f: 1.6695815, hinge3_f: 1.4601755, hinge1: 2.0111705, hinge2: 2.1849425, hinge3: 1.9273315, cla: 0.0000005, lr: 0.0000008
+epochs:1, iter: 4, hinge1_f: 1.8925325, hinge2_f: 1.6397685, hinge3_f: 1.4253965, hinge1: 2.0195235, hinge2: 2.1464675, hinge3: 2.0521615, cla: 0.0000005, lr: 0.0000008

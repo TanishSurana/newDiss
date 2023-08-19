@@ -5,7 +5,7 @@ import torch
 from PIL import Image
 from torchvision import transforms
 
-from config import VMD_test_root
+from config import VMD_test_root,VMD_training_root
 from misc import check_mkdir
 # from networks.TVSD import TVSD
 from networks.VMD_network import VMD_Network
@@ -31,6 +31,7 @@ img_transform = transforms.Compose([
 target_transform = transforms.ToTensor()
 
 root = VMD_test_root[0]
+root = VMD_training_root[0]
 
 to_pil = transforms.ToPILImage()
 
