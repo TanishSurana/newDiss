@@ -1,3 +1,154 @@
+import os
+
+import os
+import zipfile
+
+def decompress_zip_files(directory):
+    """Decompress all .zip files in a given directory."""
+    for filename in os.listdir(directory):
+        if filename.endswith('.zip'):
+            file_path = os.path.join(directory, filename)
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                # Determine the extraction path (you can modify this if needed)
+                extract_path = os.path.join(directory, filename.replace('.zip', ''))
+                zip_ref.extractall(extract_path)
+                print(f"Decompressed: {filename} to {extract_path}")
+
+sam_path = 'sam_optic_mask\\train'
+#decompress_zip_files(sam_path)
+
+
+
+def list_files(directory):
+    """List all files in a given directory."""
+    return [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+
+def list_folders(directory):
+    """List all folders in a given directory."""
+    return [d for d in os.listdir(directory) if os.path.isdir(os.path.join(directory, d))]
+
+optic_path = 'semi_optic_features\\test'
+optic = list_folders(optic_path)
+sam_path = 'sam_optic_mask\\data_test\\test'
+sam = list_folders(sam_path)
+
+
+
+print('test sam optic')
+print('checking for missing folders')
+for s in sam:
+    if s not in optic:
+        print('missing', s)
+
+
+
+
+for o in optic:
+    if o not in sam:
+        print('missing o', o)
+
+print('above should be any missing folders')
+print('chekcing for missing images')
+
+
+for s in sam:
+    sam_video_path = os.path.join(sam_path, s)
+    optic_video_path = os.path.join(optic_path, s)
+
+    o_files = list_files(optic_video_path)
+    s_files = list_files(sam_video_path)
+
+    if len(o_files) != len(s_files):
+        print(s, 'has mismatch, ', len(o_files), len(s_files))
+
+  
+
+    for si,oi in zip(o_files, s_files):
+        if si[:-3] != oi[:-3]:
+            print(si, oi, si[:-3])
+
+    continue
+
+
+    print(s)
+    print(set(s_files) -set(o_files))
+    #print(o_files, s_files, s)
+    print()
+    
+
+    for sf in s_files:
+        if sf not in o_files:
+            print(sf, 'missing in', optic_video_path)
+
+    for opf in o_files:
+        if opf not in s_files:
+            print(opf, 'missing in', sam_video_path)
+
+print('above is the list of files missing')
+
+
+print('\n\nnow checking train data')
+
+sam_path = 'sam_optic_mask\\train'
+optic_path = 'semi_optic_features\\train'
+sam = list_folders(sam_path)
+optic = list_folders(optic_path)
+
+print('len of folder',len(sam), len(optic))
+
+
+print('checking for missing folders')
+for s in sam:
+    if s not in optic:
+        print('missing', s)
+
+
+
+
+for o in optic:
+    if o not in sam:
+        print('missing o', o)
+
+print('above should be any missing folders')
+print('chekcing for missing images')
+
+
+for s in sam:
+    sam_video_path = os.path.join(sam_path, s)
+    optic_video_path = os.path.join(optic_path, s)
+
+    o_files = list_files(optic_video_path)
+    s_files = list_files(sam_video_path)
+
+    if len(o_files) != len(s_files):
+        print(s, 'has mismatch, ', len(o_files), len(s_files))
+
+  
+
+    for si,oi in zip(o_files, s_files):
+        if si[:-3] != oi[:-3]:
+            print(si, oi, si[:-3])
+
+    continue
+
+
+    print(s)
+    print(set(s_files) -set(o_files))
+    #print(o_files, s_files, s)
+    print()
+    
+
+    for sf in s_files:
+        if sf not in o_files:
+            print(sf, 'missing in', optic_video_path)
+
+    for opf in o_files:
+        if opf not in s_files:
+            print(opf, 'missing in', sam_video_path)
+
+print('above is the list of files missing')
+
+
 # this is for optical flow refinement only
 
 # todos: 
@@ -17,7 +168,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import transforms
 #from sklearn.model_selection import train_test_split
-import cv2
 
 import os
 import os.path
@@ -50,22 +200,7 @@ def listdirs_only(folder):
     return [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
 # return image triple pairs in video and return single image
 
-def detect_sobel_edges_pil(image, threshold=30):
-    
-    image_np = np.array(image)
-    sobel_x = cv2.Sobel(image_np, cv2.CV_64F, 1, 0, ksize=3)
-    sobel_y = cv2.Sobel(image_np, cv2.CV_64F, 0, 1, ksize=3)
-    magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
-    magnitude = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    
-    # Apply morphological dilation to increase the thickness of edges
-    kernel = np.ones((3, 3), np.uint8)
-    thick_edges = cv2.dilate(magnitude, kernel, iterations=5)
-    
-    # Binary thresholding
-    _, binary_image = cv2.threshold(thick_edges, threshold, 255, cv2.THRESH_BINARY)
 
-    return Image.fromarray(binary_image)
 class CustomDataset_with_mask(data.Dataset):
     def __init__(self, root, traintest, joint_transform=None, img_transform=None, transform=None, initial_mask_percentage = 0.2):
         self.traintest = traintest
@@ -255,8 +390,6 @@ class CustomDataset3(data.Dataset):
         opticimage = Image.open(optic).convert("RGB")
         preimage = Image.open(pre).convert("L")
 
-        
-
         if self.transform is not None:
             gtimage = self.transform(gtimage)
             opticimage = self.transform(opticimage)
@@ -268,109 +401,13 @@ class CustomDataset3(data.Dataset):
         
         return (opticimage, preimage), gtimage
               
-class CustomDataset_sam(data.Dataset):
-    def __init__(self, root, traintest, joint_transform=None, img_transform=None, transform=None, initial_mask_percentage = 0.2):
-        self.traintest = traintest
-        self.mask_folder = root['mask']
-        self.opic_folder = root['optic']
-        self.premask_folder = root['premask']
-        self.initial_mask_percentage = initial_mask_percentage
-        
-        self.num_video_frame = 0
-        self.videoImg_list = self.generateImgFromVideo()
-        self.input_folder = 'JPEGImages'
-        self.label_folder = 'SegmentationClassPNG'
-        self.img_ext = '.jpg'
-        self.label_ext = '.png'
-        self.transform = transform
-        print(len(self.videoImg_list), self.num_video_frame)
 
-    def update_mask_percentage(self, current_epoch, total_epochs):
-        max_epochs = total_epochs  # Adjust if needed
-        decrease_rate = self.initial_mask_percentage / max_epochs
-        updated_mask_percentage = max(0, self.initial_mask_percentage - current_epoch * decrease_rate)
-        return updated_mask_percentage
-
-    def generate_random_mask(self, image_size, per):
-        mask = torch.rand(image_size) > per
-        return mask
-
-    def apply_mask_to_image(self, image_tensor, mask):
-        masked_image = image_tensor.clone()
-        #print(masked_image.shape, mask.shape)
-        masked_image[0, :, :].mul_(mask)
-        return masked_image    
-    
-    def sortImg(self, img_list):
-        
-        img_int_list = [int(f.split('.')[0]) for f in img_list]
-        sort_index = [i for i, v in sorted(enumerate(img_int_list), key=lambda x: x[1])]  # sort img to 001,002,003...
-        return [img_list[i] for i in sort_index]
-    
-    def generateImgFromVideo(self):
-
-        imgs = []
- 
-        video_list = listdirs_only(os.path.join(self.mask_folder, self.traintest))
-
-        for video in video_list:
-
-
-            
-            img_list = os.listdir(os.path.join(self.mask_folder,self.traintest ,video, 'SegmentationClassPNG'))
-            print(os.path.join(self.mask_folder,self.traintest ,video, 'SegmentationClassPNG'))
-            
-            img_list = self.sortImg(img_list)
-            print(img_list)
-            prev = img_list[0].split('.')[0]
-            
-            for img in img_list:
-                # need optic mask
-                # need gt
-                # need premask
-                imgno = (img.split('.')[0])
-                if int(imgno) == 1:
-                    continue
-                clubbed = [os.path.join(self.mask_folder, self.traintest, video, 'SegmentationClassPNG', img), 
-                           os.path.join(self.opic_folder, self.traintest, video, prev+'.png'),
-                           os.path.join(self.premask_folder, self.traintest, video, prev+'.png')]
-                prev = imgno
-
-                imgs.append(clubbed)
-            
-            self.num_video_frame += len(img_list)
-
-        return imgs
-    
-
-    def __len__(self):
-        return len(self.videoImg_list)
-    
-    def __getitem__(self, idx,  current_epoch=None, total_epochs=None):
-        gt, optic, pre = self.videoImg_list[idx]  
-        gtimage = Image.open(gt).convert("L")
-        opticimage = Image.open(optic).convert("L")
-        preimage = Image.open(pre).convert("L")
-
-        opticimage = detect_sobel_edges_pil(opticimage)
-
-        if self.transform is not None:
-            gtimage = self.transform(gtimage)
-            opticimage = self.transform(opticimage)
-            preimage = self.transform(preimage)
-        
-
-
-        gtimage = gtimage.squeeze(0) # need to check if needed coz of mask
-        
-        return (opticimage, preimage), gtimage
-       
 class Autoencoder(nn.Module):
     def __init__(self):
         super(Autoencoder, self).__init__()
         # Encoder
         self.encoder = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
+            nn.Conv2d(4, 32, kernel_size=3, padding=1),
             nn.ReLU(True),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
@@ -396,117 +433,6 @@ class Autoencoder(nn.Module):
         encoded = self.encoder(combined_input)
         decoded = self.decoder(encoded)
         return decoded
-
-import torch
-import torch.nn as nn
-
-class Autoencoder(nn.Module):
-    def __init__(self):
-        super(Autoencoder, self).__init__()
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=2, stride=2)
-        )
-        
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, input_image1, input_image2):
-        combined_input = torch.cat((input_image1, input_image2), dim=1)
-        encoded = self.encoder(combined_input)
-        decoded = self.decoder(encoded)
-        return decoded
-
-
-class Autoencoder_2d(nn.Module):
-    def __init__(self):
-        super(Autoencoder_2d, self).__init__()
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            nn.MaxPool2d(kernel_size=2, stride=2)
-        )
-        
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(True),
-            nn.ConvTranspose2d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, input_image1, input_image2):
-        combined_input = torch.cat((input_image1, input_image2), dim=1)
-        encoded = self.encoder(combined_input)
-        decoded = self.decoder(encoded)
-        return decoded
-
-
-class Autoencoder_2d_drop(nn.Module):
-    def __init__(self, dropout_rate=0.5):
-        super(Autoencoder_2d_drop, self).__init__()
-        
-        # Dropout rate
-        self.dropout = nn.Dropout(dropout_rate)
-
-        # Encoder
-        self.encoder = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            self.dropout,
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            self.dropout,
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(True),
-            self.dropout,
-            nn.MaxPool2d(kernel_size=2, stride=2)
-        )
-
-        # Decoder
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(True),
-            self.dropout,
-            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(True),
-            self.dropout,
-            nn.ConvTranspose2d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, input_image1, input_image2):
-        combined_input = torch.cat((input_image1, input_image2), dim=1)
-        encoded = self.encoder(combined_input)
-        decoded = self.decoder(encoded)
-        return decoded
-
 
 
 class UNet_old(nn.Module):
@@ -632,28 +558,30 @@ transform = transforms.Compose([
 #     'optic': 'small_optical_features',
 #     'premask': 'small_vmd_mask'
 # }
+# root = {
+#     'mask': 'fulldataset',
+#     'optic': 'semi_optic_features',
+#     'premask': 'vmd_masks'
+# }
+
 root = {
-    'mask': 'fulldataset\\semi_test',
-    'optic': 'sam_optic_mask\\semi_test',
-    'premask': 'vmd_masks\\semi_test'
+    'mask': 'fulldataset',
+    'optic': 'sam_optic_mask',
+    'premask': 'vmd_masks'
 }
-
-
-
-
 # Create dataset instance 
-traindataset = CustomDataset_sam(root, traintest='train', transform=transform)
+traindataset = CustomDataset3(root, traintest='train', transform=transform)
 
 
 # Create DataLoader
 batch_size = 16
 train_loader = DataLoader(traindataset, batch_size=batch_size, shuffle=True)
-testdataset = CustomDataset_sam(root, traintest='test', transform=transform)
+testdataset = CustomDataset3(root, traintest='test', transform=transform)
 val_loader = DataLoader(testdataset, batch_size=batch_size, shuffle=True)
 
 
 # # Create the autoencoder model
-autoencoder = Autoencoder_2d_drop(dropout_rate = 0.3)
+autoencoder = UNet()
 autoencoder.to(device)
 
 # # Define loss function and optimizer
@@ -732,6 +660,8 @@ for epoch in range(num_epochs):
         loss = lovasz_hinge(reconstructions, batch_masks, per_image = False)
         loss.backward()
         optimizer.step()
+
+        #print(reconstructions.shape, batch_masks.shape)
 
         
 

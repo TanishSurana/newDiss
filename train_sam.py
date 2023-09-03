@@ -21,6 +21,7 @@ import cv2
 
 import os
 import os.path
+import pandas as pd
 
 import torch.utils.data as data
 from PIL import Image
@@ -50,22 +51,7 @@ def listdirs_only(folder):
     return [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
 # return image triple pairs in video and return single image
 
-def detect_sobel_edges_pil(image, threshold=30):
-    
-    image_np = np.array(image)
-    sobel_x = cv2.Sobel(image_np, cv2.CV_64F, 1, 0, ksize=3)
-    sobel_y = cv2.Sobel(image_np, cv2.CV_64F, 0, 1, ksize=3)
-    magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
-    magnitude = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    
-    # Apply morphological dilation to increase the thickness of edges
-    kernel = np.ones((3, 3), np.uint8)
-    thick_edges = cv2.dilate(magnitude, kernel, iterations=5)
-    
-    # Binary thresholding
-    _, binary_image = cv2.threshold(thick_edges, threshold, 255, cv2.THRESH_BINARY)
 
-    return Image.fromarray(binary_image)
 class CustomDataset_with_mask(data.Dataset):
     def __init__(self, root, traintest, joint_transform=None, img_transform=None, transform=None, initial_mask_percentage = 0.2):
         self.traintest = traintest
@@ -255,8 +241,6 @@ class CustomDataset3(data.Dataset):
         opticimage = Image.open(optic).convert("RGB")
         preimage = Image.open(pre).convert("L")
 
-        
-
         if self.transform is not None:
             gtimage = self.transform(gtimage)
             opticimage = self.transform(opticimage)
@@ -267,9 +251,19 @@ class CustomDataset3(data.Dataset):
         gtimage = gtimage.squeeze(0) # need to check if needed coz of mask
         
         return (opticimage, preimage), gtimage
-              
+
+def compute_iou(mask1, mask2):
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    if union == 0:
+        return 0
+    return intersection / union
+
+
+
+
 class CustomDataset_sam(data.Dataset):
-    def __init__(self, root, traintest, joint_transform=None, img_transform=None, transform=None, initial_mask_percentage = 0.2):
+    def __init__(self, root, traintest, joint_transform=None, img_transform=None, transform=None, initial_mask_percentage = 0.2, max_colors = 5):
         self.traintest = traintest
         self.mask_folder = root['mask']
         self.opic_folder = root['optic']
@@ -283,6 +277,8 @@ class CustomDataset_sam(data.Dataset):
         self.img_ext = '.jpg'
         self.label_ext = '.png'
         self.transform = transform
+        self.max_colors = max_colors
+        self.img_size = (416,416)
         print(len(self.videoImg_list), self.num_video_frame)
 
     def update_mask_percentage(self, current_epoch, total_epochs):
@@ -334,6 +330,7 @@ class CustomDataset_sam(data.Dataset):
                 clubbed = [os.path.join(self.mask_folder, self.traintest, video, 'SegmentationClassPNG', img), 
                            os.path.join(self.opic_folder, self.traintest, video, prev+'.png'),
                            os.path.join(self.premask_folder, self.traintest, video, prev+'.png')]
+
                 prev = imgno
 
                 imgs.append(clubbed)
@@ -341,18 +338,55 @@ class CustomDataset_sam(data.Dataset):
             self.num_video_frame += len(img_list)
 
         return imgs
-    
 
     def __len__(self):
         return len(self.videoImg_list)
     
     def __getitem__(self, idx,  current_epoch=None, total_epochs=None):
         gt, optic, pre = self.videoImg_list[idx]  
+
+
+
+    
+        mask = cv2.imread(pre, 0) 
+        multi_class = cv2.imread(optic)
+        ground_truth = cv2.imread(gt, 0) 
+
+        if self.transform is not None:
+            mask = cv2.resize(mask, self.img_size) / 255.0
+            multi_class = cv2.resize(multi_class, self.img_size)
+            ground_truth = cv2.resize(ground_truth, self.img_size) / 255.0
+
+        unique_colors = set(tuple(v) for m2d in multi_class for v in m2d)
+        color_iou_scores = []
+
+        for color in unique_colors:
+            color_mask = ((multi_class == color) * 1).all(axis=-1)
+            iou = compute_iou(color_mask, mask)
+            color_iou_scores.append((color, iou))
+
+        # Sort by IoU and take the top colors
+        sorted_colors = [item[0] for item in sorted(color_iou_scores, key=lambda x: x[1], reverse=True)[:self.max_colors]]
+
+        multi_class_channels = []
+        for color in sorted_colors:
+            channel = ((multi_class == color) * 1).all(axis=-1) * 255
+            multi_class_channels.append(channel)
+
+        # If there are fewer unique colors than MAX_COLORS, append all-zero channels
+        while len(multi_class_channels) < self.max_colors:
+            multi_class_channels.append(np.zeros_like(mask))
+
+        combined = [mask] + multi_class_channels
+        combined = np.stack(combined, axis=0) / 255.0
+
+        return torch.tensor(combined, dtype=torch.float32), torch.tensor(ground_truth, dtype=torch.float32)
+    
+                
         gtimage = Image.open(gt).convert("L")
         opticimage = Image.open(optic).convert("L")
+        multi_class = cv2.imread(optic)
         preimage = Image.open(pre).convert("L")
-
-        opticimage = detect_sobel_edges_pil(opticimage)
 
         if self.transform is not None:
             gtimage = self.transform(gtimage)
@@ -618,6 +652,52 @@ class UNet(nn.Module):
         
         return decoded_output
 
+import torch.nn as nn
+import torch.nn.functional as F
+
+class Autoencoder_sam_multicolor(nn.Module):
+    def __init__(self, max_colors=5, dropout_prob=0.5):
+        super(Autoencoder_sam_multicolor, self).__init__()
+        self.input_channels = 1 + max_colors  # 1 for binary mask, rest for multi-class channels
+        
+        # Encoder
+        self.encoder = nn.Sequential(
+            nn.Conv2d(self.input_channels, 32, kernel_size=3, padding=1),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_prob),
+            
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Dropout(dropout_prob),
+            
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(True),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
+        
+        # Decoder
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ReLU(True),
+            nn.Dropout(dropout_prob),
+            
+            nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ReLU(True),
+            nn.Dropout(dropout_prob),
+            
+            nn.ConvTranspose2d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
+
+
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
@@ -633,12 +713,10 @@ transform = transforms.Compose([
 #     'premask': 'small_vmd_mask'
 # }
 root = {
-    'mask': 'fulldataset\\semi_test',
-    'optic': 'sam_optic_mask\\semi_test',
-    'premask': 'vmd_masks\\semi_test'
+    'mask': 'fulldataset',
+    'optic': 'sam_optic_mask',
+    'premask': 'vmd_masks'
 }
-
-
 
 
 # Create dataset instance 
@@ -646,14 +724,14 @@ traindataset = CustomDataset_sam(root, traintest='train', transform=transform)
 
 
 # Create DataLoader
-batch_size = 16
-train_loader = DataLoader(traindataset, batch_size=batch_size, shuffle=True)
+batch_size = 32
+train_loader = DataLoader(traindataset, batch_size=batch_size, shuffle=True, num_workers=4)
 testdataset = CustomDataset_sam(root, traintest='test', transform=transform)
-val_loader = DataLoader(testdataset, batch_size=batch_size, shuffle=True)
+val_loader = DataLoader(testdataset, batch_size=batch_size, shuffle=True, num_workers=4)
 
 
 # # Create the autoencoder model
-autoencoder = Autoencoder_2d_drop(dropout_rate = 0.3)
+autoencoder = Autoencoder_sam_multicolor(max_colors = 5, dropout_prob = 0.3)
 autoencoder.to(device)
 
 # # Define loss function and optimizer
@@ -697,6 +775,8 @@ val_losses = []
 val_ious = []
 val_accs = []
 val_maes = []
+metrics_df = pd.DataFrame(columns=['Epoch', 'Train Loss', 'Train IoU', 'Train Acc', 'Train MAE', 'Val Loss', 'Val IoU', 'Val Acc', 'Val MAE'])
+
 
 
 # Training loop
@@ -710,36 +790,30 @@ for epoch in range(num_epochs):
     progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}")
     loss_record = AvgMeter()
     
-    for batch_images, batch_masks in progress_bar:
-    #for batch_images, batch_masks in train_loader:
-        # Move input data to GPU
-        # batch_images[0] = [img.to(device) for img in batch_images[0]]
-        # batch_images[1] = [img.to(device) for img in batch_images[1]]
+     
+    for batch_combined, batch_ground_truth in progress_bar:
         train_loader.current_epoch = epoch
         train_loader.total_epochs = num_epochs
-        batch_images = [img.to(device) for img in batch_images]
-        batch_masks = batch_masks.to(device)
-        batch_masks = batch_masks.unsqueeze(1)  # Add channel dimension for masks
-
-        
-
+        batch_combined = batch_combined.to(device)
+        batch_ground_truth = batch_ground_truth.to(device)
+        batch_ground_truth = batch_ground_truth.unsqueeze(1)  # Add channel dimension for ground truth
 
         optimizer.zero_grad()
-        input_image1 = batch_images[0]  # Optic image
-        input_image2 = batch_images[1]  # Premask image
-        reconstructions = autoencoder(input_image1, input_image2)
-        #loss = criterion(reconstructions, batch_masks)  # Add channel dimension for masks
-        loss = lovasz_hinge(reconstructions, batch_masks, per_image = False)
+        
+        input_image1 = batch_combined[:, 0:1, :, :]  # Binary mask image
+        input_image2 = batch_combined[:, 1:, :, :]  # Multi-channel image with top colors
+
+        combined_input = torch.cat([input_image1, input_image2], dim=1)
+        reconstructions = autoencoder(combined_input)
+        loss = lovasz_hinge(reconstructions, batch_ground_truth, per_image = False)
         loss.backward()
         optimizer.step()
 
-        
-
         # Compute IoU, Accuracy, and MAE on GPU
         pred_masks = (reconstructions > 0.5).float()  # Convert to binary mask
-        batch_iou = iou_score(pred_masks, batch_masks)
-        batch_acc = accuracy(pred_masks, batch_masks)
-        batch_mae = mae(reconstructions, batch_masks)
+        batch_iou = iou_score(pred_masks, batch_ground_truth)
+        batch_acc = accuracy(pred_masks, batch_ground_truth)
+        batch_mae = mae(reconstructions, batch_ground_truth)
 
         total_iou += batch_iou.item()
         total_acc += batch_acc.item()
@@ -751,28 +825,22 @@ for epoch in range(num_epochs):
     val_acc = 0.0
     val_mae = 0.0
     with torch.no_grad():
-        for batch_images, batch_masks in val_loader:
-            # Move input data to GPU
-            # batch_images[0] = [img.to(device) for img in batch_images[0]]
-            # batch_images[1] = [img.to(device) for img in batch_images[1]]
-            batch_images = [img.to(device) for img in batch_images]
-            batch_masks = batch_masks.to(device)
-            batch_masks = batch_masks.unsqueeze(1)  # Add channel dimension for masks
+        for batch_combined, batch_ground_truth in val_loader:
+            batch_combined = batch_combined.to(device)
+            batch_ground_truth = batch_ground_truth.to(device)
+            batch_ground_truth = batch_ground_truth.unsqueeze(1)  # Add channel dimension for masks
 
-
-            input_image1 = batch_images[0]  # Optic image
-            input_image2 = batch_images[1]  # Premask image
-            reconstructions = autoencoder(input_image1, input_image2)
-            val_loss += criterion(reconstructions, batch_masks)
-
-            #print(reconstructions.shape, batch_masks.shape)
-
+            input_image1 = batch_combined[:, 0:1, :, :]  # Binary mask image
+            input_image2 = batch_combined[:, 1:, :, :]  # Multi-channel image with top colors
+            
+            combined_input = torch.cat([input_image1, input_image2], dim=1)
+            reconstructions = autoencoder(combined_input)
+            val_loss += criterion(reconstructions, batch_ground_truth).item()
 
             pred_masks = (reconstructions > 0.5).float()
-            batch_iou = iou_score(pred_masks, batch_masks)
-            batch_acc = accuracy(pred_masks, batch_masks)
-            batch_mae = mae(reconstructions, batch_masks)
-
+            batch_iou = iou_score(pred_masks, batch_ground_truth)
+            batch_acc = accuracy(pred_masks, batch_ground_truth)
+            batch_mae = mae(reconstructions, batch_ground_truth)
 
             val_iou += batch_iou.item()
             val_acc += batch_acc.item()
@@ -791,7 +859,7 @@ for epoch in range(num_epochs):
     train_ious.append(train_iou)
     train_accs.append(train_acc)
     train_maes.append(train_mae)
-    val_losses.append(avg_val_loss.item())
+    val_losses.append(avg_val_loss)
     val_ious.append(avg_val_iou)
     val_accs.append(avg_val_acc)
     val_maes.append(avg_val_mae)
@@ -812,4 +880,23 @@ for epoch in range(num_epochs):
         'val_maes': val_maes
     }, checkpoint_path)
     
+    epoch_metrics = {
+    'Epoch': epoch+1,
+    'Train Loss': loss.item(),
+    'Train IoU': train_iou,
+    'Train Acc': train_acc,
+    'Train MAE': train_mae,
+    'Val Loss': avg_val_loss,
+    'Val IoU': avg_val_iou,
+    'Val Acc': avg_val_acc,
+    'Val MAE': avg_val_mae
+    }
+    metrics_df = metrics_df.append(epoch_metrics, ignore_index=True)
     print(f"Epoch [{epoch+1}/{num_epochs}] - Train Loss: {loss:.4f} - Train IoU: {train_iou:.4f} - Train Acc: {train_acc:.4f} - Train MAE: {train_mae:.4f} - Val Loss: {avg_val_loss:.4f} - Val IoU: {avg_val_iou:.4f} - Val Acc: {avg_val_acc:.4f} - Val MAE: {avg_val_mae:.4f}")
+
+with pd.ExcelWriter('training_metrics.xlsx') as writer:
+    metrics_df.to_excel(writer, index=False)
+
+
+
+

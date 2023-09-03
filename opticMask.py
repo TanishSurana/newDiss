@@ -37,6 +37,8 @@ from utils.utils import InputPadder, coords_grid, bilinear_sampler
 import time
 from tqdm import tqdm, trange
 
+from types import SimpleNamespace
+
 
 # TODO: first we need to generate optical flow, ot+1 using RAFT model, this will use input as it and it+1
 # first we need an optical flow model: RAFT
@@ -198,6 +200,8 @@ def load_image_proper(imfile):
 
 
 def opticflow(args, path, videoresultpath):
+    args = SimpleNamespace(alternate_corr=False, mixed_precision=False, model='raft/models/raft-things.pth', small=False)
+    print(args, type(args))
     model = torch.nn.DataParallel(RAFT(args))
     model.load_state_dict(torch.load(args.model, map_location=DEVICE))
 

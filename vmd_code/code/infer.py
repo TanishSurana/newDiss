@@ -32,14 +32,13 @@ target_transform = transforms.ToTensor()
 
 root = VMD_test_root[0]
 root = VMD_training_root[0]
+root = 'VMD\\more2'
 
 to_pil = transforms.ToPILImage()
 
 
 def main():
     net = VMD_Network().cuda()
-
-    
     checkpoint = 'best.pth'
     check_point = torch.load(checkpoint)
     net.load_state_dict(check_point['model'])
@@ -47,21 +46,26 @@ def main():
     net.eval()
     with torch.no_grad():
         video_list = listdirs_only(os.path.join(root))
+        #print(video_list)
         for video in tqdm(video_list):
             # all images
-            img_list = [os.path.splitext(f)[0] for f in os.listdir(os.path.join(root, video, args['input_folder'],)) if
-                        f.endswith('.jpg')]
+            print(os.listdir(os.path.join(root, video)))
+            #img_list = [os.path.splitext(f)[0] for f in os.listdir(os.path.join(root, video, args['input_folder'],)) if f.endswith('.jpg')]
+            img_list = [os.path.splitext(f)[0] for f in os.listdir(os.path.join(root, video,)) if
+                        f.endswith('.png')]
             # need evaluation images
-            img_eval_list = [os.path.splitext(f)[0] for f in os.listdir(os.path.join(root, video, args['label_folder'])) if f.endswith('.png')]
+            #img_eval_list = [os.path.splitext(f)[0] for f in os.listdir(os.path.join(root, video, args['label_folder'])) if f.endswith('.png')]
+            
+            img_eval_list = [os.path.splitext(f)[0] for f in os.listdir(os.path.join(root, video)) if f.endswith('.png')]
 
             img_eval_list = sortImg(img_eval_list)
             for exemplar_idx, exemplar_name in enumerate(img_eval_list):
                 query_idx_list = getAdjacentIndex(exemplar_idx, 0, len(img_list), args['test_adjacent'])
 
                 for query_idx in query_idx_list:
-                    exemplar = Image.open(os.path.join(root, video, args['input_folder'], exemplar_name + '.jpg')).convert('RGB')
+                    exemplar = Image.open(os.path.join(root, video,  exemplar_name + '.png')).convert('RGB')
                     w, h = exemplar.size
-                    query = Image.open(os.path.join(root, video, args['input_folder'], img_list[query_idx] + '.jpg')).convert('RGB')
+                    query = Image.open(os.path.join(root, video,  img_list[query_idx] + '.png')).convert('RGB')
                     exemplar_tensor = img_transform(exemplar).unsqueeze(0).cuda()
                     query_tensor = img_transform(query).unsqueeze(0).cuda()
                     exemplar_pre, _, _ = net(exemplar_tensor, query_tensor, query_tensor)

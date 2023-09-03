@@ -17,7 +17,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision import transforms
 #from sklearn.model_selection import train_test_split
-import cv2
 
 import os
 import os.path
@@ -50,22 +49,7 @@ def listdirs_only(folder):
     return [d for d in os.listdir(folder) if os.path.isdir(os.path.join(folder, d))]
 # return image triple pairs in video and return single image
 
-def detect_sobel_edges_pil(image, threshold=30):
-    
-    image_np = np.array(image)
-    sobel_x = cv2.Sobel(image_np, cv2.CV_64F, 1, 0, ksize=3)
-    sobel_y = cv2.Sobel(image_np, cv2.CV_64F, 0, 1, ksize=3)
-    magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
-    magnitude = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    
-    # Apply morphological dilation to increase the thickness of edges
-    kernel = np.ones((3, 3), np.uint8)
-    thick_edges = cv2.dilate(magnitude, kernel, iterations=5)
-    
-    # Binary thresholding
-    _, binary_image = cv2.threshold(thick_edges, threshold, 255, cv2.THRESH_BINARY)
 
-    return Image.fromarray(binary_image)
 class CustomDataset_with_mask(data.Dataset):
     def __init__(self, root, traintest, joint_transform=None, img_transform=None, transform=None, initial_mask_percentage = 0.2):
         self.traintest = traintest
@@ -255,8 +239,6 @@ class CustomDataset3(data.Dataset):
         opticimage = Image.open(optic).convert("RGB")
         preimage = Image.open(pre).convert("L")
 
-        
-
         if self.transform is not None:
             gtimage = self.transform(gtimage)
             opticimage = self.transform(opticimage)
@@ -352,18 +334,15 @@ class CustomDataset_sam(data.Dataset):
         opticimage = Image.open(optic).convert("L")
         preimage = Image.open(pre).convert("L")
 
-        opticimage = detect_sobel_edges_pil(opticimage)
-
         if self.transform is not None:
             gtimage = self.transform(gtimage)
             opticimage = self.transform(opticimage)
             preimage = self.transform(preimage)
         
 
-
         gtimage = gtimage.squeeze(0) # need to check if needed coz of mask
         
-        return (opticimage, preimage), gtimage
+        return (opticimage), gtimage
        
 class Autoencoder(nn.Module):
     def __init__(self):
@@ -397,8 +376,6 @@ class Autoencoder(nn.Module):
         decoded = self.decoder(encoded)
         return decoded
 
-import torch
-import torch.nn as nn
 
 class Autoencoder(nn.Module):
     def __init__(self):
@@ -475,7 +452,7 @@ class Autoencoder_2d_drop(nn.Module):
 
         # Encoder
         self.encoder = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
+            nn.Conv2d(3, 32, kernel_size=3, padding=1),
             nn.ReLU(True),
             self.dropout,
             nn.MaxPool2d(kernel_size=2, stride=2),
@@ -501,9 +478,8 @@ class Autoencoder_2d_drop(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, input_image1, input_image2):
-        combined_input = torch.cat((input_image1, input_image2), dim=1)
-        encoded = self.encoder(combined_input)
+    def forward(self, input_image1):
+        encoded = self.encoder(input_image1)
         decoded = self.decoder(encoded)
         return decoded
 
@@ -633,12 +609,10 @@ transform = transforms.Compose([
 #     'premask': 'small_vmd_mask'
 # }
 root = {
-    'mask': 'fulldataset\\semi_test',
-    'optic': 'sam_optic_mask\\semi_test',
-    'premask': 'vmd_masks\\semi_test'
+    'mask': 'fulldataset',
+    'optic': 'sam_optic_mask',
+    'premask': 'vmd_masks'
 }
-
-
 
 
 # Create dataset instance 
@@ -653,7 +627,7 @@ val_loader = DataLoader(testdataset, batch_size=batch_size, shuffle=True)
 
 
 # # Create the autoencoder model
-autoencoder = Autoencoder_2d_drop(dropout_rate = 0.3)
+autoencoder = Autoencoder_2d_drop(dropout_rate = 0.2)
 autoencoder.to(device)
 
 # # Define loss function and optimizer
@@ -725,9 +699,9 @@ for epoch in range(num_epochs):
 
 
         optimizer.zero_grad()
-        input_image1 = batch_images[0]  # Optic image
-        input_image2 = batch_images[1]  # Premask image
-        reconstructions = autoencoder(input_image1, input_image2)
+        input_image1 = batch_images  # Optic image
+        #input_image2 = batch_images[1]  # Premask image
+        reconstructions = autoencoder(batch_images)
         #loss = criterion(reconstructions, batch_masks)  # Add channel dimension for masks
         loss = lovasz_hinge(reconstructions, batch_masks, per_image = False)
         loss.backward()
@@ -760,9 +734,9 @@ for epoch in range(num_epochs):
             batch_masks = batch_masks.unsqueeze(1)  # Add channel dimension for masks
 
 
-            input_image1 = batch_images[0]  # Optic image
-            input_image2 = batch_images[1]  # Premask image
-            reconstructions = autoencoder(input_image1, input_image2)
+            input_image1 = batch_images  # Optic image
+            #input_image2 = batch_images[1]  # Premask image
+            reconstructions = autoencoder(input_image1)
             val_loss += criterion(reconstructions, batch_masks)
 
             #print(reconstructions.shape, batch_masks.shape)
